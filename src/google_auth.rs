@@ -49,6 +49,7 @@ pub async fn google_login_handler(
             let _ = kv
                 .put(&csrf_token.secret().to_string(), pkce_verifier.secret())
                 .unwrap()
+                .expiration_ttl(300) // 5 minutes
                 .execute()
                 .await
                 .unwrap();
