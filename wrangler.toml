@@ -1,0 +1,19 @@
+name = "hedylogos-api"
+main = "build/worker/shim.mjs"
+compatibility_date = "2025-03-27"
+
+[build]
+command = "cargo install -q worker-build && worker-build --release"
+
+[[kv_namespaces]]
+binding = "HEDYLOGOS_KV"
+id = "45c8b59514004f7399b4381bc0b23b7b"
+
+[vars]
+GOOGLE_CLIENT_ID = "942502623276-d4tu6j03uj0ol41vlvtvobbmfa9bu9f6.apps.googleusercontent.com"
+REDIRECT_URI = "https://my.hedylogos.dev/auth/google/callback"
+KV_BINDING_NAME = "HEDYLOGOS_KV"
+
+[route]
+pattern = "my.hedylogos.dev"
+custom_domain = true
