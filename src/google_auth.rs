@@ -25,6 +25,8 @@ pub struct AuthResponse {
     pub error: Option<String>,
 }
 
+const GOOGLE_USER_INFO_URL: &str = "https://www.googleapis.com/oauth2/v3/userinfo";
+
 // --- /auth/google/login Handler ---
 pub async fn google_login_handler(
     State(state): State<AppState>,
@@ -137,7 +139,7 @@ pub async fn google_callback_handler(
                     // Use the access token to fetch user info from Google API.
 
                     let user_info_response = reqwest::Client::new()
-                        .get("https://www.googleapis.com/oauth2/v3/userinfo")
+                        .get(GOOGLE_USER_INFO_URL)
                         .bearer_auth(token_result.access_token().secret())
                         .send()
                         .await
@@ -180,6 +182,7 @@ pub async fn google_callback_handler(
                             ON CONFLICT(email, provider) 
                             DO UPDATE SET 
                             auth_code = excluded.auth_code,
+                            auth_code_expires_at = excluded.auth_code_expires_at,
                             refresh_token = excluded.refresh_token,
                             access_token = excluded.access_token,
                             first_name = excluded.first_name,
