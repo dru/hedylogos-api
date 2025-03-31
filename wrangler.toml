@@ -8,11 +8,16 @@ command = "cargo install -q worker-build && worker-build --release"
 [[kv_namespaces]]
 binding = "HEDYLOGOS_KV"
 id = "45c8b59514004f7399b4381bc0b23b7b"
+preview_id = "5278bbf9f95c4a77a290a8133f18dee9"
+
+[[d1_databases]]
+binding = "HEDYLOGOS_DB"
+database_name = "hedylogos"
+database_id = "e6d8c596-1740-47b8-b83e-a180d8e66edf"
 
 [vars]
 GOOGLE_CLIENT_ID = "942502623276-d4tu6j03uj0ol41vlvtvobbmfa9bu9f6.apps.googleusercontent.com"
 REDIRECT_URI = "https://my.hedylogos.dev/auth/google/callback"
-KV_BINDING_NAME = "HEDYLOGOS_KV"
 
 [route]
 pattern = "my.hedylogos.dev"

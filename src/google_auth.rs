@@ -2,31 +2,40 @@ use oneshot;
 
 use axum::{
     extract::{Query, State},
-    response::{IntoResponse, Redirect},
     Json,
 };
-
 use oauth2::{
     AuthorizationCode, CsrfToken, PkceCodeChallenge, PkceCodeVerifier, Scope, TokenResponse,
 };
 
-use serde::Deserialize;
+use rand::{distr::Alphanumeric, Rng};
+use wasm_bindgen_futures::wasm_bindgen::JsValue;
 
-use worker::{console_error, console_log};
+use serde::{Deserialize, Serialize};
+
+use worker::console_error;
 
 use crate::app_state::AppState;
+
+#[derive(Debug, Serialize)]
+
+pub struct AuthResponse {
+    pub redirect_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
 
 // --- /auth/google/login Handler ---
 pub async fn google_login_handler(
     State(state): State<AppState>,
     // Json(_): axum::extract::Json<()>, // Dummy JSON extractor to match the handler signature
-) -> axum::response::Result<impl IntoResponse> {
+) -> Json<AuthResponse> {
     let (tx, rx) = oneshot::channel();
     wasm_bindgen_futures::spawn_local(async move {
         let result = {
             // your code
 
-            let kv = state.env.kv(&state.kv_binding_name).unwrap();
+            let kv = state.env.kv("HEDYLOGOS_KV").unwrap();
 
             // Generate PKCE challenge and verifier
             let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
@@ -54,13 +63,16 @@ pub async fn google_login_handler(
                 .await
                 .unwrap();
 
-            console_log!("Redirecting to: {}", auth_url);
+            // console_log!("Redirecting to: {}", auth_url);
             // Redirect the user to Google's authorization page
-            Ok(Redirect::to(auth_url.as_str()))
+            AuthResponse {
+                redirect_url: auth_url.to_string(),
+                error: None,
+            }
         };
         tx.send(result).unwrap();
     });
-    rx.await.unwrap()
+    Json(rx.await.unwrap())
 }
 
 // --- Query parameters received on callback ---
@@ -70,25 +82,30 @@ pub struct CallbackParams {
     state: String, // This is the CSRF token
 }
 
+#[derive(Debug, Serialize)]
+pub struct CallbackResponse {
+    auth_code: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
 // --- /auth/google/callback Handler ---
 #[axum::debug_handler]
 pub async fn google_callback_handler(
     State(state): State<AppState>,
     Query(params): Query<CallbackParams>,
     // Json(_): axum::extract::Json<()>, // Dummy JSON extractor to match the handler signature
-) -> axum::response::Result<Json<String>> {
+) -> Json<CallbackResponse> {
     let (tx, rx) = oneshot::channel();
     wasm_bindgen_futures::spawn_local(async move {
         let result = {
-            console_log!("Callback received. State: {}", params.state);
-            let kv = state.env.kv(&state.kv_binding_name).unwrap();
+            let kv = state.env.kv("HEDYLOGOS_KV").unwrap();
 
             // Retrieve the PKCE verifier using the state (CSRF token) as the key
             let pkce_verifier_secret = match kv.get(&params.state).text().await.unwrap() {
                 Some(secret) => secret,
                 None => {
                     console_error!("Invalid state or expired CSRF token.");
-                    // In a real app, return a user-friendly error page/message
                     // return Ok(Json("Invalid state or expired CSRF token.".to_string()));
                     return ();
                 }
@@ -100,21 +117,13 @@ pub async fn google_callback_handler(
             // Reconstruct the PKCE verifier
             let pkce_verifier = PkceCodeVerifier::new(pkce_verifier_secret);
 
-            // Exchange the authorization code for an access token
-            // let token_response = state
-            //     .oauth_client
-            //     .set_exchange_code(AuthorizationCode::new(params.code))
-            //     .set_pkce_verifier(pkce_verifier)
-            //     .request_async(async_http_client)
-            //     .await;
-
             let http_client = reqwest::Client::builder()
                 // Following redirects opens the client up to SSRF vulnerabilities.
                 // .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .expect("Client should build");
 
-            // Now you can trade it for an access token.
+            // Now we can trade it for an access token.
             let token_response = state
                 .oauth_client
                 .exchange_code(AuthorizationCode::new(params.code))
@@ -125,39 +134,99 @@ pub async fn google_callback_handler(
 
             match token_response {
                 Ok(token_result) => {
-                    // --- IMPORTANT ---
-                    // Successfully obtained the token!
-                    // In a real application, you would now:
-                    // 1. Use the `token_result.access_token()` to fetch user info from Google API.
-                    // 2. Find or create a user record in your database.
-                    // 3. Generate your *own* session token/cookie.
-                    // 4. Store your session token securely (e.g., in KV associated with user ID).
-                    // 5. Set the session cookie in the user's browser and redirect them to a logged-in page.
+                    // Use the access token to fetch user info from Google API.
 
-                    // For this *minimal* example, just confirm success.
-                    //             console_log!(
-                    //     "OAuth token exchange successful. Access Token: [REDACTED], Expires in: {:?}, Scopes: {:?}",
-                    //     token_result.expires_in(),
-                    //     token_result.scopes()
-                    // );
+                    let user_info_response = reqwest::Client::new()
+                        .get("https://www.googleapis.com/oauth2/v3/userinfo")
+                        .bearer_auth(token_result.access_token().secret())
+                        .send()
+                        .await
+                        .expect("Failed to fetch user info");
 
-                    // You might store the access_token or refresh_token in KV here,
-                    // perhaps keyed by a new session ID you generate and set as a cookie.
-                    // Example (conceptual):
-                    // let session_id = generate_secure_session_id();
-                    // kv.put(&format!("session:{}", session_id), token_result.access_token().secret())?.execute().await?;
-                    // let cookie = format!("session_id={}; HttpOnly; Secure; Path=/", session_id);
-                    // return Response::redirect("/dashboard")?.with_header("Set-Cookie", cookie);
+                    let user_info: serde_json::Value = user_info_response
+                        .json()
+                        .await
+                        .expect("Failed to parse user info response");
 
-                    Ok(Json(format!(
-                        "Login Successful! (Token retrieved, scope) {:?}",
-                        token_result.scopes()
-                    )))
+                    let user_info_value =
+                        |key: &str| JsValue::from(user_info[key].as_str().unwrap_or_default());
+
+                    let refresh_token = rand::rng()
+                        .sample_iter(&Alphanumeric)
+                        .take(32)
+                        .map(char::from)
+                        .collect::<String>();
+
+                    let auth_code = rand::rng()
+                        .sample_iter(&Alphanumeric)
+                        .take(32)
+                        .map(char::from)
+                        .collect::<String>();
+
+                    let access_token = token_result.access_token().secret();
+                    let provider = "google".to_string();
+
+                    // Find or create a user record in database.
+                    let db = state
+                        .env
+                        .d1("HEDYLOGOS_DB")
+                        .expect("Failed to get DB binding");
+
+                    let statement = db.prepare(
+                        r#"
+                            INSERT INTO users 
+                            (email, first_name, last_name, picture, auth_code, auth_code_expires_at, refresh_token, access_token, provider) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(email, provider) 
+                            DO UPDATE SET 
+                            auth_code = excluded.auth_code,
+                            refresh_token = excluded.refresh_token,
+                            access_token = excluded.access_token,
+                            first_name = excluded.first_name,
+                            last_name = excluded.last_name,
+                            picture = excluded.picture,
+                            updated_at = CURRENT_TIMESTAMP;
+                        "#,
+                    );
+
+                    let result = statement
+                        .bind(&[
+                            user_info_value("email"),
+                            user_info_value("given_name"),
+                            user_info_value("family_name"),
+                            user_info_value("picture"),
+                            auth_code.clone().into(),
+                            // Expires in 2 min
+                            (chrono::Utc::now() + chrono::Duration::minutes(2))
+                                .to_string()
+                                .into(),
+                            refresh_token.into(),
+                            access_token.into(),
+                            provider.into(),
+                        ])
+                        .unwrap()
+                        .run()
+                        .await;
+
+                    match result {
+                        Ok(_) => CallbackResponse {
+                            auth_code: auth_code.clone(),
+                            error: None,
+                        },
+
+                        Err(e) => CallbackResponse {
+                            auth_code: "".to_string(),
+                            error: Some(format!("Database error: {}", e)),
+                        },
+                    }
                 }
-                Err(_) => Ok(Json("Error!".to_string())),
+                Err(e) => CallbackResponse {
+                    auth_code: "".to_string(),
+                    error: Some(format!("Token error: {}", e)),
+                },
             }
         };
         tx.send(result).unwrap();
     });
-    rx.await.unwrap()
+    Json(rx.await.unwrap())
 }

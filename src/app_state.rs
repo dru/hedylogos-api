@@ -12,7 +12,6 @@ pub type Oauth2ClientWithEndpoints =
 #[derive(Clone)]
 pub struct AppState {
     pub oauth_client: Arc<Oauth2ClientWithEndpoints>,
-    pub kv_binding_name: String, // Name of the KV binding in wrangler.toml
     pub env: Env,
 }
 
@@ -37,11 +36,6 @@ impl AppState {
             .expect("Failed to retrieve REDIRECT_URI from environment")
             .to_string();
 
-        let kv_binding_name = env
-            .var("KV_BINDING_NAME")
-            .expect("Failed to retrieve KV_BINDING_NAME from environment")
-            .to_string(); // Use var if non-secret, secret if sensitive
-
         let oauth_client = BasicClient::new(ClientId::new(client_id))
             .set_client_secret(ClientSecret::new(client_secret))
             .set_auth_uri(
@@ -57,7 +51,6 @@ impl AppState {
 
         Self {
             oauth_client: Arc::new(oauth_client),
-            kv_binding_name,
             env,
         }
     }
