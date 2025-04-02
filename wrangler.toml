@@ -17,8 +17,9 @@ database_id = "e6d8c596-1740-47b8-b83e-a180d8e66edf"
 
 [vars]
 GOOGLE_CLIENT_ID = "942502623276-d4tu6j03uj0ol41vlvtvobbmfa9bu9f6.apps.googleusercontent.com"
-REDIRECT_URI = "https://my.hedylogos.dev/auth/google/callback"
+REDIRECT_URI = "https://api.hedylogos.dev/auth/google/callback"
+APP_REDIRECT_URI = "https://my.hedylogos.dev"
 
 [route]
-pattern = "my.hedylogos.dev"
+pattern = "api.hedylogos.dev"
 custom_domain = true

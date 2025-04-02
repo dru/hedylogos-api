@@ -1,7 +1,9 @@
+use base64::{prelude::BASE64_STANDARD, Engine};
 use oneshot;
 
 use axum::{
     extract::{Query, State},
+    response::Redirect,
     Json,
 };
 use oauth2::{
@@ -97,7 +99,7 @@ pub async fn google_callback_handler(
     State(state): State<AppState>,
     Query(params): Query<CallbackParams>,
     // Json(_): axum::extract::Json<()>, // Dummy JSON extractor to match the handler signature
-) -> Json<CallbackResponse> {
+) -> impl axum::response::IntoResponse {
     let (tx, rx) = oneshot::channel();
     wasm_bindgen_futures::spawn_local(async move {
         let result = {
@@ -231,5 +233,12 @@ pub async fn google_callback_handler(
         };
         tx.send(result).unwrap();
     });
-    Json(rx.await.unwrap())
+
+    let encoded_response =
+        BASE64_STANDARD.encode(serde_json::to_string(&rx.await.unwrap()).unwrap());
+
+    // Redirect to the frontend (APP_REDIRECT_URI) with the encoded response
+    let redirect_url = format!("{}?code={}", state.app_url, encoded_response);
+
+    Redirect::temporary(redirect_url.as_str())
 }

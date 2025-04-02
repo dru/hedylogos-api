@@ -13,6 +13,7 @@ pub type Oauth2ClientWithEndpoints =
 pub struct AppState {
     pub oauth_client: Arc<Oauth2ClientWithEndpoints>,
     pub env: Env,
+    pub app_url: String,
 }
 
 const GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -49,9 +50,15 @@ impl AppState {
                 RedirectUrl::new(redirect_uri).expect("Failed to parse REDIRECT_URI"),
             );
 
+        let app_url = env
+            .var("APP_REDIRECT_URI")
+            .expect("Failed to retrieve APP_REDIRECT_URI from environment")
+            .to_string();
+
         Self {
             oauth_client: Arc::new(oauth_client),
             env,
+            app_url,
         }
     }
 }
