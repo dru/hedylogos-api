@@ -67,7 +67,6 @@ pub async fn google_login_handler(
                 .await
                 .unwrap();
 
-            // console_log!("Redirecting to: {}", auth_url);
             // Redirect the user to Google's authorization page
             AuthResponse {
                 redirect_url: auth_url.to_string(),
