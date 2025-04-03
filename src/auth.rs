@@ -39,7 +39,7 @@ pub struct AuthParams {
 #[derive(Deserialize, Debug)]
 struct AuthCode {
     auth_code: String,
-    error: Option<String>,
+    // error: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]

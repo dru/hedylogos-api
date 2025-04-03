@@ -12,6 +12,8 @@ use auth::auth_handler;
 mod jwt_extractor;
 
 use jwt_extractor::Claims;
+use reqwest::Method;
+use tower_http::cors::{Any, CorsLayer};
 use tower_service::Service;
 use worker::{event, Context, Env, HttpRequest, Result};
 
@@ -25,11 +27,18 @@ async fn fetch(
 
     let shared_state = AppState::new(env);
 
+    let cors = CorsLayer::new()
+        // allow `GET` and `POST` when accessing the resource
+        .allow_methods([Method::GET, Method::POST])
+        // allow requests from any origin
+        .allow_origin(Any);
+
     let mut app = Router::new()
         .route("/", get(root))
         .route("/auth/google/login", get(google_login_handler))
         .route("/auth/google/callback", get(google_callback_handler))
         .route("/auth/", get(auth_handler))
+        .layer(cors)
         .with_state(shared_state);
 
     Ok(app.call(req).await?)

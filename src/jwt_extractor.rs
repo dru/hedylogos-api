@@ -43,7 +43,7 @@ impl axum::extract::FromRequestParts<AppState> for Claims {
         let token_data: TokenData<Claims> =
             match decode(auth_header.token(), &decoding_key, &validation) {
                 Ok(data) => data,
-                Err(e) => {
+                Err(_) => {
                     return Err("Invalid token".to_string());
                 }
             };
